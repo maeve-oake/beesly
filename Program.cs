@@ -1,3 +1,8 @@
+using System.Net.Http.Headers;
+using CiscoIPPhone;
+using CiscoIPPhoneApi;
+using System.Xml.Linq;
+
 var builder = WebApplication.CreateBuilder(args);
 
 // Add services to the container.
@@ -14,28 +19,27 @@ if (app.Environment.IsDevelopment())
 
 app.UseHttpsRedirection();
 
-var summaries = new[]
+app.MapGet("/app.xml", () =>
 {
-    "Freezing", "Bracing", "Chilly", "Cool", "Mild", "Warm", "Balmy", "Hot", "Sweltering", "Scorching"
-};
+    var menu = new CiscoIpPhoneMenu
+    {
+        Title = "Site Directory",
+        Prompt = "Select a destination",
+        MenuItem =
+        {
+            new CiscoIpPhoneMenuItemType { Name = "TOUCH.XML", Url = "http://elster.lan.ci:8000/touch.xml" },
+        },
+        SoftKeyItem =
+        {
+            new CiscoIpPhoneSoftKeyType { Name = "Select", Url = "SoftKey:Select", Position = 1 },
+            new CiscoIpPhoneSoftKeyType { Name = "Exit",   Url = "SoftKey:Exit",   Position = 4 },
+        },
+    };
 
-app.MapGet("/weatherforecast", () =>
-{
-    var forecast = Enumerable.Range(1, 5).Select(index =>
-        new WeatherForecast
-        (
-            DateOnly.FromDateTime(DateTime.Now.AddDays(index)),
-            Random.Shared.Next(-20, 55),
-            summaries[Random.Shared.Next(summaries.Length)]
-        ))
-        .ToArray();
-    return forecast;
-})
-.WithName("GetWeatherForecast");
+    return CiscoXml.Result(menu);
+
+});
+
 
 app.Run();
 
-record WeatherForecast(DateOnly Date, int TemperatureC, string? Summary)
-{
-    public int TemperatureF => 32 + (int)(TemperatureC / 0.5556);
-}
