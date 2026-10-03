@@ -1,6 +1,0 @@
-@beesly_HostAddress = http://localhost:5220
-
-GET {{beesly_HostAddress}}/weatherforecast/
-Accept: application/json
-
-###
