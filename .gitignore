@@ -48,7 +48,10 @@ artifacts/
 **/Properties/launchSettings.json
 
 # VS Code
-.vscode/
+.vscode/*
+!.vscode/launch.json
+!.vscode/tasks.json
+!.vscode/settings.json
 
 *_i.c
 *_p.c
@@ -290,3 +293,10 @@ __pycache__/
 *.odx.cs
 *.xsd.cs
 .envrc
+
+# Local credentials (use .NET user secrets or environment variables)
+.env
+.env.*
+!.env.example
+secrets.json
+appsettings.Local.json
