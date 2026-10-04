@@ -294,7 +294,7 @@ __pycache__/
 *.xsd.cs
 .envrc
 
-# Local credentials (use .NET user secrets or environment variables)
+# Local credentials and environment files
 .env
 .env.*
 !.env.example

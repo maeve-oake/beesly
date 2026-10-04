@@ -1,0 +1,8 @@
+Windows XP shell32.dll icons (Microsoft), archived by bartekl1/windows-ui-assets.
+control-panel.ico: ICON22_1.ico
+power.ico: ICON221_1.ico
+Source: https://github.com/bartekl1/windows-ui-assets/tree/main/Icons/Windows%20XP/ico/shell32.dll
+
+Tahoma and Trebuchet MS Bold fonts (Microsoft), archived by infofintech/bootfont:
+https://github.com/infofintech/bootfont/blob/master/TAHOMA.TTF
+https://github.com/infofintech/bootfont/blob/master/TREBUCBD.TTF

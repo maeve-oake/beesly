@@ -1,0 +1,22 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "build",
+      "type": "process",
+      "command": "direnv",
+      "args": [
+        "exec",
+        "${workspaceFolder}",
+        "dotnet",
+        "build",
+        "${workspaceFolder}/beesly.csproj"
+      ],
+      "problemMatcher": "$msCompile",
+      "group": {
+        "kind": "build",
+        "isDefault": true
+      }
+    }
+  ]
+}

@@ -1,12 +1,41 @@
 using CiscoIPPhone;
 using CiscoIPPhoneApi;
+using Beesly;
+using NetDaemon.Client.Extensions;
+using NetDaemon.Client.Settings;
 
-var builder = WebApplication.CreateBuilder(args);
-builder.WebHost.UseUrls("http://0.0.0.0:5220");
+DotNetEnv.Env.NoClobber().Load(".env");
+var settings = AppSettings.Load();
+
+var builder = WebApplication.CreateBuilder(new WebApplicationOptions
+{
+    Args = args,
+    ContentRootPath = AppContext.BaseDirectory,
+    EnvironmentName = "Production",
+});
+builder.Configuration.Sources.Clear();
+builder.Configuration.AddInMemoryCollection(new Dictionary<string, string?>
+{
+    ["Logging:LogLevel:Default"] = Environment.GetEnvironmentVariable("LOG_LEVEL") ?? "Information",
+    ["Logging:LogLevel:Microsoft.AspNetCore"] = Environment.GetEnvironmentVariable("FRAMEWORK_LOG_LEVEL") ?? "Warning",
+    ["AllowedHosts"] = Environment.GetEnvironmentVariable("ALLOWED_HOSTS") ?? "*",
+});
+builder.WebHost.UseUrls($"http://{settings.ListenAddress}:{settings.Port}");
+builder.Services.AddSingleton(settings);
+builder.Services.Configure<HomeAssistantSettings>(client =>
+{
+    client.Host = settings.HaUrl.Host;
+    client.Port = settings.HaUrl.Port;
+    client.Ssl = settings.HaUrl.Scheme == "https";
+    client.Token = settings.HaToken;
+});
+builder.Services.AddHomeAssistantClient();
+builder.Services.AddSingleton<HomeAssistantService>();
+builder.Services.AddHostedService<FreePbxBridge>();
 
 var app = builder.Build();
 
-app.MapGet("/app.xml", () =>
+app.MapGet("/app.xml", (HttpRequest request) =>
 {
     var menu = new CiscoIpPhoneMenu
     {
@@ -14,17 +43,17 @@ app.MapGet("/app.xml", () =>
         Prompt = "Select a destination",
         MenuItem =
         {
-            new CiscoIpPhoneMenuItemType { Name = "TOUCH.XML", Url = "http://elster.lan.ci:8000/touch.xml" },
+            new CiscoIpPhoneMenuItemType { Name = "Home Assistant", Url = HomeAssistantPhone.Url(request, "/ha.xml") },
         },
         SoftKeyItem =
         {
             new CiscoIpPhoneSoftKeyType { Name = "Select", Url = "SoftKey:Select", Position = 1 },
-            new CiscoIpPhoneSoftKeyType { Name = "Exit",   Url = "SoftKey:Exit",   Position = 4 },
+            new CiscoIpPhoneSoftKeyType { Name = "Exit",   Url = "Init:Services",   Position = 4 },
         },
     };
 
     return CiscoXml.Result(menu);
-
 });
 
+app.MapHomeAssistant();
 app.Run();
