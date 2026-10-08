@@ -80,3 +80,39 @@ for appliance, state in product(('lamp', 'aircon'), ('on', 'off', 'unavailable')
             y = 136 + j * 11 if len(lines) == 2 else 142
             d.text((x + 28, y), line, anchor='mm', font=small, fill='#111111')
     image.save(out / f'{state}.png', optimize=True)
+
+
+# Bedroom controls share the existing phone pane and colour touch rectangles.
+out = assets / 'bedroom'
+out.mkdir(exist_ok=True)
+for states in product(('on', 'off', 'unavailable'), repeat=3):
+    image = Image.new('RGB', (298, 168), '#ece9d8')
+    d = ImageDraw.Draw(image)
+    d.fontmode = '1'
+    d.rectangle((0, 0, 297, 167), outline='#003cba', width=3)
+    gradient(d, (3, 3, 294, 27), (62, 148, 255), (0, 66, 204))
+    d.line((4, 3, 293, 3), fill='#83baff')
+    image.paste(control_icon, (8, 7), control_icon)
+    d.text((30, 7), 'Maeve bedroom lighting', font=title, fill='#003399')
+    d.text((29, 6), 'Maeve bedroom lighting', font=title, fill='white')
+    d.text((149, 36), 'Tap a light to toggle', anchor='mm', font=small, fill='#003399')
+    for i, (label, state) in enumerate(zip(('Desk LED', 'Rack LED', 'Ceiling light'), states)):
+        x = 14 + i * 92
+        d.rounded_rectangle((x, 48, x + 85, 115), radius=3, fill='#faf9f2', outline='#003c74')
+        d.line((x + 3, 50, x + 82, 50), fill='white')
+        d.line((x + 3, 113, x + 82, 113), fill='#d6d0b8', width=2)
+        d.text((x + 43, 60), label, anchor='mm', font=small, fill='#111111')
+        d.ellipse((x + 34, 73, x + 51, 90), fill='#40b83a' if state == 'on' else '#a3b2c4', outline='#728ba4')
+        d.text((x + 43, 102), state.capitalize(), anchor='mm', font=small, fill='#222222')
+    for i, (swatch, lines) in enumerate([
+        ('#ffe0a3', ('Warm', 'white')), ('#e5f2ff', ('Cold', 'white')),
+        ('#a020f0', ('Purple',)), ('#ff3333', ('Red',)), ('#64beff', ('Light', 'blue'))
+    ]):
+        x = 24 + i * 50
+        d.rounded_rectangle((x, 129, x + 48, 155), radius=3, fill='#f5f4ea', outline='#003c74')
+        d.line((x + 3, 131, x + 45, 131), fill='white')
+        d.line((x + 3, 153, x + 45, 153), fill='#d6d0b8')
+        d.rectangle((x + 3, 134, x + 8, 150), fill=swatch, outline='#999999')
+        for j, line in enumerate(lines):
+            d.text((x + 28, 136 + j * 11 if len(lines) == 2 else 142), line, anchor='mm', font=small, fill='#111111')
+    image.save(out / ('-'.join(states) + '.png'), optimize=True)

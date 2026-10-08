@@ -21,9 +21,9 @@ public static class HomeAssistantPhone
 
     private static void AddSoftKey(CiscoIpPhoneDisplayableType screen, string name, string url, ushort position) =>
         screen.SoftKeyItem.Add(new CiscoIpPhoneSoftKeyType { Name = name, Url = url, Position = position });
-    private static string BrightnessNotify(HttpRequest request, string level)
+    private static string BrightnessNotify(HttpRequest request, string level, bool bedroom = false)
     {
-        var path = $"{request.PathBase}/ha/brightness/{level}".TrimStart('/');
+        var path = $"{request.PathBase}/ha/{(bedroom ? "bedroom/" : "")}brightness/{level}".TrimStart('/');
         return $"Notify:http:{request.Host.Host}:{request.Host.Port ?? 80}:{path}::";
     }
 
@@ -32,13 +32,18 @@ public static class HomeAssistantPhone
         app.MapGet("/ha.xml", ShowEntitiesAsync);
         app.MapGet("/ha/touch.xml", ShowLampAsync);
         app.MapGet("/ha/aircon.xml", ShowAirconAsync);
+        app.MapGet("/ha/bedroom.xml", ShowBedroomAsync);
         app.MapGet("/ha/{appliance}/{state}.png", GetGraphic);
         app.MapPost("/ha/brightness/{level}", AdjustBrightnessAsync);
+        app.MapPost("/ha/bedroom/brightness/{level}", AdjustBedroomBrightnessAsync);
     }
 
     private static IResult GetGraphic(HttpRequest request, IWebHostEnvironment environment, string appliance, string state)
     {
-        if (appliance is not ("lamp" or "aircon") || state is not ("on" or "off" or "unavailable"))
+        var validState = appliance == "bedroom"
+            ? state.Split('-') is { Length: 3 } parts && parts.All(part => part is "on" or "off" or "unavailable")
+            : state is "on" or "off" or "unavailable";
+        if (appliance is not ("lamp" or "aircon" or "bedroom") || !validState)
             return Results.NotFound();
 
         request.HttpContext.Response.Headers.CacheControl = "public, max-age=86400";
@@ -71,6 +76,84 @@ public static class HomeAssistantPhone
             return Results.StatusCode(502);
         }
     }
+
+    private static async Task<IResult> AdjustBedroomBrightnessAsync(
+        HttpRequest request, HomeAssistantService ha, ILogger<HomeAssistantService> logger, string level)
+    {
+        request.HttpContext.Response.Headers.CacheControl = "no-store";
+        if (level is not ("dim" or "brighter")) return Results.BadRequest();
+        if (ha.BedroomLights.Count != 3) return Results.NotFound();
+        if (!ha.IsConfigured) return Results.StatusCode(503);
+        try
+        {
+            await ha.AdjustBrightnessAsync([ha.BedroomLights["desk"], ha.BedroomLights["rack"]], level == "dim" ? -20 : 20);
+            return Results.Text("OK", "text/plain");
+        }
+        catch (Exception ex) when (ex is HttpRequestException or HomeAssistantApiCallException or OperationCanceledException)
+        {
+            logger.LogWarning("Bedroom brightness change failed: {Reason}", ex.Message);
+            return Results.StatusCode(502);
+        }
+    }
+
+    private static Task<IResult> ShowBedroomAsync(
+        HttpRequest request, HomeAssistantService ha, IWebHostEnvironment environment,
+        string? toggle = null, string? color = null) =>
+        HandleRequestAsync(request, ha, async () =>
+        {
+            if (ha.BedroomLights.Count != 3)
+                return Message(request, "Control unavailable", "The bedroom lights are not configured.");
+            if (toggle is not (null or "desk" or "rack" or "ceiling")) return Results.BadRequest();
+            if (color is not null)
+            {
+                if (color is not ("warm-white" or "cold-white" or "purple" or "red" or "light-blue"))
+                    return Results.BadRequest();
+                await ha.SetColorAsync([ha.BedroomLights["desk"], ha.BedroomLights["rack"]], color);
+            }
+            var states = await ha.GetStatesAsync();
+            if (toggle is not null)
+            {
+                var entity = ha.BedroomLights[toggle];
+                var before = states.FirstOrDefault(state => state.EntityId == entity.EntityId)?.State;
+                if (entity.CanControlState(before))
+                    states = await ha.ToggleAndWaitAsync(entity, before!);
+            }
+            var controls = new[] { "desk", "rack", "ceiling" };
+            var graphics = controls.Select(control =>
+            {
+                var state = states.FirstOrDefault(state => state.EntityId == ha.BedroomLights[control].EntityId)?.State;
+                return state is "on" or "off" ? state : "unavailable";
+            }).ToArray();
+            var page = new CiscoIpPhoneGraphicFileMenu
+            {
+                Title = "Maeve bedroom lighting",
+                Prompt = "Colour / brightness: desk + rack",
+                LocationX = -1,
+                LocationY = -1,
+                Url = GraphicUrl(request, environment, "bedroom", string.Join('-', graphics))
+            };
+            var names = new[] { "Desk LED", "Rack LED", "Ceiling light" };
+            for (var i = 0; i < controls.Length; i++)
+                page.MenuItem.Add(new()
+                {
+                    Name = names[i],
+                    Url = Url(request, graphics[i] == "unavailable" ? "/ha/bedroom.xml" : $"/ha/bedroom.xml?toggle={controls[i]}"),
+                    TouchArea = new() { X1 = (ushort)(14 + i * 92), Y1 = 48, X2 = (ushort)(99 + i * 92), Y2 = 115 }
+                });
+            var colors = new[] { "warm-white", "cold-white", "purple", "red", "light-blue" };
+            for (var i = 0; i < colors.Length; i++)
+                page.MenuItem.Add(new()
+                {
+                    Name = colors[i],
+                    Url = Url(request, $"/ha/bedroom.xml?color={colors[i]}"),
+                    TouchArea = new() { X1 = (ushort)(24 + i * 50), Y1 = 129, X2 = (ushort)(73 + i * 50), Y2 = 155 }
+                });
+            AddSoftKey(page, "Dim", BrightnessNotify(request, "dim", bedroom: true), 1);
+            AddSoftKey(page, "Brighter", BrightnessNotify(request, "brighter", bedroom: true), 2);
+            AddSoftKey(page, "Refresh", Url(request, "/ha/bedroom.xml"), 3);
+            AddSoftKey(page, "Exit", "Init:Services", 4);
+            return CiscoXml.Result(page);
+        });
 
     private static Task<IResult> ShowLampAsync(
         HttpRequest request, HomeAssistantService ha, IWebHostEnvironment environment,

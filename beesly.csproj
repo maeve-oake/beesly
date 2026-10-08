@@ -9,7 +9,7 @@
   <ItemGroup>
     <Content Remove=".env;.env.*" />
     <None Remove=".env;.env.*" />
-    <Content Include="Assets/lamp/*.png;Assets/aircon/*.png" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
+    <Content Include="Assets/lamp/*.png;Assets/aircon/*.png;Assets/bedroom/*.png" CopyToOutputDirectory="PreserveNewest" CopyToPublishDirectory="PreserveNewest" />
     <PackageReference Include="DotNetEnv" Version="3.2.0" />
     <PackageReference Include="NetDaemon.Client" Version="26.36.0" />
   </ItemGroup>

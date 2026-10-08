@@ -44,6 +44,7 @@ app.MapGet("/app.xml", (HttpRequest request) =>
         MenuItem =
         {
             new CiscoIpPhoneMenuItemType { Name = "Home Assistant", Url = HomeAssistantPhone.Url(request, "/ha.xml") },
+            new CiscoIpPhoneMenuItemType { Name = "Maeve bedroom lighting", Url = HomeAssistantPhone.Url(request, "/ha/bedroom.xml") },
         },
         SoftKeyItem =
         {

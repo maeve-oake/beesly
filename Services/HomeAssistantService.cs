@@ -8,6 +8,7 @@ namespace Beesly;
 public sealed class HomeAssistantService(AppSettings settings, IHomeAssistantApiManager api)
 {
     public IReadOnlyList<HomeAssistantEntity> Entities => settings.Entities;
+    public IReadOnlyDictionary<string, HomeAssistantEntity> BedroomLights => settings.BedroomLights;
     public IReadOnlyDictionary<string, HomeAssistantEntity> Slots => settings.Slots;
     public bool IsConfigured => !string.IsNullOrWhiteSpace(settings.HaToken);
 
@@ -41,28 +42,33 @@ public sealed class HomeAssistantService(AppSettings settings, IHomeAssistantApi
         await CallServiceAsync("climate/set_temperature", new { entity_id = entity.EntityId, temperature });
     }
 
-    public async Task SetColorAsync(HomeAssistantEntity entity, string color)
+    public Task SetColorAsync(HomeAssistantEntity entity, string color) => SetColorAsync([entity], color);
+
+    public async Task SetColorAsync(IReadOnlyList<HomeAssistantEntity> entities, string color)
     {
-        if (!entity.CanToggle || entity.Domain != "light")
+        if (entities.Count == 0 || entities.Any(entity => !entity.CanToggle || entity.Domain != "light"))
             throw new InvalidOperationException("Invalid colour control.");
+        var ids = entities.Select(entity => entity.EntityId).ToArray();
         object data = color switch
         {
-            "warm-white" => new { entity_id = entity.EntityId, color_temp_kelvin = 2700, transition = 0 },
-            "cold-white" => new { entity_id = entity.EntityId, color_temp_kelvin = 6500, transition = 0 },
-            "purple" => new { entity_id = entity.EntityId, rgb_color = new[] { 160, 32, 240 }, transition = 0 },
-            "red" => new { entity_id = entity.EntityId, rgb_color = new[] { 255, 0, 0 }, transition = 0 },
-            "light-blue" => new { entity_id = entity.EntityId, rgb_color = new[] { 100, 190, 255 }, transition = 0 },
+            "warm-white" => new { entity_id = ids, color_temp_kelvin = 2700, transition = 0 },
+            "cold-white" => new { entity_id = ids, color_temp_kelvin = 6500, transition = 0 },
+            "purple" => new { entity_id = ids, rgb_color = new[] { 160, 32, 240 }, transition = 0 },
+            "red" => new { entity_id = ids, rgb_color = new[] { 255, 0, 0 }, transition = 0 },
+            "light-blue" => new { entity_id = ids, rgb_color = new[] { 100, 190, 255 }, transition = 0 },
             _ => throw new InvalidOperationException("Unknown colour preset.")
         };
         await CallServiceAsync("light/turn_on", data);
     }
 
-    public async Task AdjustBrightnessAsync(HomeAssistantEntity entity, int step)
+    public Task AdjustBrightnessAsync(HomeAssistantEntity entity, int step) => AdjustBrightnessAsync([entity], step);
+
+    public async Task AdjustBrightnessAsync(IReadOnlyList<HomeAssistantEntity> entities, int step)
     {
-        if (!entity.CanToggle || entity.Domain != "light" || step is not (-20 or 20))
+        if (entities.Count == 0 || entities.Any(entity => !entity.CanToggle || entity.Domain != "light") || step is not (-20 or 20))
             throw new InvalidOperationException("Invalid brightness adjustment.");
         await CallServiceAsync("light/turn_on",
-            new { entity_id = entity.EntityId, brightness_step_pct = step, transition = 0.5 });
+            new { entity_id = entities.Select(entity => entity.EntityId).ToArray(), brightness_step_pct = step, transition = 0.5 });
     }
 
     public async Task<List<HassState>> ToggleAndWaitAsync(HomeAssistantEntity entity, string previousState)

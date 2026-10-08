@@ -16,6 +16,7 @@ public sealed class AppSettings
     public string? AmiUsername { get; private init; }
     public string AmiPassword { get; private init; } = "";
     public IReadOnlyList<HomeAssistantEntity> Entities { get; private init; } = [];
+    public IReadOnlyDictionary<string, HomeAssistantEntity> BedroomLights { get; private init; } = new Dictionary<string, HomeAssistantEntity>();
     public IReadOnlyDictionary<string, HomeAssistantEntity> Slots { get; private init; } = new Dictionary<string, HomeAssistantEntity>();
 
     private AppSettings(Uri haUrl) => HaUrl = haUrl;
@@ -48,6 +49,7 @@ public sealed class AppSettings
             AmiUsername = amiUsername,
             AmiPassword = amiPassword,
             Entities = entities,
+            BedroomLights = ReadBedroomLights(entities),
             Slots = ReadSlots(entities),
         };
     }
@@ -95,6 +97,24 @@ public sealed class AppSettings
             entities.Add(entity);
         }
         return entities;
+    }
+
+    private static Dictionary<string, HomeAssistantEntity> ReadBedroomLights(IReadOnlyList<HomeAssistantEntity> entities)
+    {
+        var mappings = JsonSerializer.Deserialize<Dictionary<string, string>>(Environment.GetEnvironmentVariable("HA_BEDROOM_LIGHTS") ?? "{}")
+            ?? throw new InvalidOperationException("HA_BEDROOM_LIGHTS must be a JSON object.");
+        var lights = new Dictionary<string, HomeAssistantEntity>();
+        foreach (var (control, id) in mappings)
+        {
+            var entity = entities.FirstOrDefault(entity => entity.EntityId == id);
+            if (control is not ("desk" or "rack" or "ceiling") || entity is null || !entity.CanToggle ||
+                (control == "ceiling" ? entity.Domain is not ("light" or "switch") : entity.Domain != "light"))
+                throw new InvalidOperationException($"HA_BEDROOM_LIGHTS entry {control} must reference an enabled light (or switch for ceiling).");
+            lights.Add(control, entity);
+        }
+        if (lights.Count != 0 && (lights.Count != 3 || lights.Values.Select(entity => entity.EntityId).Distinct().Count() != 3))
+            throw new InvalidOperationException("HA_BEDROOM_LIGHTS must configure three distinct entities for desk, rack and ceiling.");
+        return lights;
     }
 
     private static Dictionary<string, HomeAssistantEntity> ReadSlots(IReadOnlyList<HomeAssistantEntity> entities)
