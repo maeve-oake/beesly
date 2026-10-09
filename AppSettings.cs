@@ -1,7 +1,6 @@
 using System.Net;
 using System.Net.Sockets;
 using System.Text.Json;
-using System.Text.RegularExpressions;
 
 namespace Beesly;
 
@@ -16,7 +15,7 @@ public sealed class AppSettings
     public string? AmiUsername { get; private init; }
     public string AmiPassword { get; private init; } = "";
     public IReadOnlyList<HomeAssistantEntity> Entities { get; private init; } = [];
-    public IReadOnlyDictionary<string, HomeAssistantEntity> BedroomLights { get; private init; } = new Dictionary<string, HomeAssistantEntity>();
+    public IReadOnlyDictionary<string, TouchView> Views { get; private init; } = new Dictionary<string, TouchView>();
     public IReadOnlyDictionary<string, HomeAssistantEntity> Slots { get; private init; } = new Dictionary<string, HomeAssistantEntity>();
 
     private AppSettings(Uri haUrl) => HaUrl = haUrl;
@@ -49,8 +48,8 @@ public sealed class AppSettings
             AmiUsername = amiUsername,
             AmiPassword = amiPassword,
             Entities = entities,
-            BedroomLights = ReadBedroomLights(entities),
-            Slots = ReadSlots(entities),
+            Views = ReadViews(),
+            Slots = ReadSlots(),
         };
     }
 
@@ -76,57 +75,53 @@ public sealed class AppSettings
         return secret;
     }
 
+    private static readonly JsonSerializerOptions JsonOptions = new()
+    {
+        PropertyNameCaseInsensitive = true,
+        UnmappedMemberHandling = System.Text.Json.Serialization.JsonUnmappedMemberHandling.Disallow,
+        Converters = { new EntityConverter() },
+    };
+
+    private static T ReadJson<T>(string variable, string fallback)
+    {
+        var value = Environment.GetEnvironmentVariable(variable);
+        var file = Environment.GetEnvironmentVariable(variable + "_FILE");
+        if (value is not null && file is not null)
+            throw new InvalidOperationException($"Set either {variable} or {variable}_FILE, not both.");
+        return JsonSerializer.Deserialize<T>(file is null ? value ?? fallback : File.ReadAllText(file), JsonOptions)
+            ?? throw new InvalidOperationException($"{variable} must not be null.");
+    }
+
     private static List<HomeAssistantEntity> ReadEntities()
     {
-        var entries = JsonSerializer.Deserialize<JsonElement[]>(Environment.GetEnvironmentVariable("HA_ENTITIES") ?? "[]")
-            ?? throw new InvalidOperationException("HA_ENTITIES must be a JSON array.");
-        var options = new JsonSerializerOptions { PropertyNameCaseInsensitive = true };
-        var entities = new List<HomeAssistantEntity>();
-        var ids = new HashSet<string>();
-
-        foreach (var entry in entries)
-        {
-            var entity = entry.ValueKind switch
-            {
-                JsonValueKind.String => new HomeAssistantEntity { EntityId = entry.GetString()! },
-                JsonValueKind.Object => entry.Deserialize<HomeAssistantEntity>(options)!,
-                _ => throw new InvalidOperationException("HA_ENTITIES entries must be entity IDs or objects."),
-            };
-            if (string.IsNullOrEmpty(entity.EntityId) || !Regex.IsMatch(entity.EntityId, @"^[a-z_]+\.[a-z0-9_]+$") || !ids.Add(entity.EntityId))
-                throw new InvalidOperationException("HA_ENTITIES must contain unique, valid entity IDs.");
-            entities.Add(entity);
-        }
+        var entities = ReadJson<List<HomeAssistantEntity>>("HA_ENTITIES", "[]");
+        foreach (var entity in entities) HomeAssistantEntity.Validate(entity);
+        if (entities.Select(e => e.EntityId).Distinct().Count() != entities.Count)
+            throw new InvalidOperationException("HA_ENTITIES contains duplicate entity IDs.");
         return entities;
     }
 
-    private static Dictionary<string, HomeAssistantEntity> ReadBedroomLights(IReadOnlyList<HomeAssistantEntity> entities)
+    private static Dictionary<string, TouchView> ReadViews()
     {
-        var mappings = JsonSerializer.Deserialize<Dictionary<string, string>>(Environment.GetEnvironmentVariable("HA_BEDROOM_LIGHTS") ?? "{}")
-            ?? throw new InvalidOperationException("HA_BEDROOM_LIGHTS must be a JSON object.");
-        var lights = new Dictionary<string, HomeAssistantEntity>();
-        foreach (var (control, id) in mappings)
+        var views = ReadJson<Dictionary<string, TouchView>>("UI_VIEWS", "{}");
+        foreach (var (id, view) in views)
         {
-            var entity = entities.FirstOrDefault(entity => entity.EntityId == id);
-            if (control is not ("desk" or "rack" or "ceiling") || entity is null || !entity.CanToggle ||
-                (control == "ceiling" ? entity.Domain is not ("light" or "switch") : entity.Domain != "light"))
-                throw new InvalidOperationException($"HA_BEDROOM_LIGHTS entry {control} must reference an enabled light (or switch for ceiling).");
-            lights.Add(control, entity);
+            if (view is null) throw new InvalidOperationException($"UI view '{id}' must be an object.");
+            view.Validate(id);
         }
-        if (lights.Count != 0 && (lights.Count != 3 || lights.Values.Select(entity => entity.EntityId).Distinct().Count() != 3))
-            throw new InvalidOperationException("HA_BEDROOM_LIGHTS must configure three distinct entities for desk, rack and ceiling.");
-        return lights;
+        return views;
     }
 
-    private static Dictionary<string, HomeAssistantEntity> ReadSlots(IReadOnlyList<HomeAssistantEntity> entities)
+    private static Dictionary<string, HomeAssistantEntity> ReadSlots()
     {
-        var mappings = JsonSerializer.Deserialize<Dictionary<string, string>>(Environment.GetEnvironmentVariable("AMI_SLOTS") ?? "{}")
-            ?? throw new InvalidOperationException("AMI_SLOTS must be a JSON object.");
+        var mappings = ReadJson<Dictionary<string, string>>("AMI_SLOTS", "{}");
         var slots = new Dictionary<string, HomeAssistantEntity>();
         foreach (var (slot, id) in mappings)
         {
-            var entity = entities.FirstOrDefault(entity => entity.EntityId == id);
-            if (!int.TryParse(slot, out var number) || number is < 1 or > 24 || entity is null || !entity.CanToggle)
-                throw new InvalidOperationException($"AMI_SLOTS entry {slot} must map a slot from 01–24 to an enabled, controllable HA entity.");
+            var entity = new HomeAssistantEntity { EntityId = id };
+            HomeAssistantEntity.Validate(entity);
+            if (!int.TryParse(slot, out var number) || number is < 1 or > 24 || !entity.CanToggle)
+                throw new InvalidOperationException($"AMI_SLOTS entry {slot} must map a slot from 01–24 to a controllable HA entity.");
             if (!slots.TryAdd(number.ToString("D2"), entity))
                 throw new InvalidOperationException($"AMI_SLOTS contains duplicate slot {number:D2}.");
         }

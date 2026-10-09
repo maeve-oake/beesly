@@ -6,3 +6,16 @@ Source: https://github.com/bartekl1/windows-ui-assets/tree/main/Icons/Windows%20
 Tahoma and Trebuchet MS Bold fonts (Microsoft), archived by infofintech/bootfont:
 https://github.com/infofintech/bootfont/blob/master/TAHOMA.TTF
 https://github.com/infofintech/bootfont/blob/master/TREBUCBD.TTF
+
+Runtime UI visual references (Microsoft Windows XP Design Team, 2001):
+https://www.retrospace.net/download/WebApplications/WindowsXPDesignGuidelines/controls.htm
+https://www.retrospace.net/download/WebApplications/WindowsXPDesignGuidelines/fonts.htm
+https://www.retrospace.net/download/WebApplications/WindowsXPDesignGuidelines/colors.htm
+
+Typography: Tahoma 8pt (11px), Trebuchet MS Bold 10pt (13px at this viewport).
+Group labels: #0046d5; disabled labels: #a1a192; dialog face: #ece9d8.
+The app draws the Luna-inspired window frame, button faces and appliance artwork
+at runtime. Only the original shell icons and typefaces are bundled as assets.
+Caption commands follow Microsoft's guidelines; Close is implemented, while
+unsupported minimize/maximize/help buttons are omitted:
+https://learn.microsoft.com/en-us/previous-versions/windows/desktop/bb226827(v=vs.85)

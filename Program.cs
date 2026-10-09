@@ -22,6 +22,7 @@ builder.Configuration.AddInMemoryCollection(new Dictionary<string, string?>
 });
 builder.WebHost.UseUrls($"http://{settings.ListenAddress}:{settings.Port}");
 builder.Services.AddSingleton(settings);
+builder.Services.AddSingleton<TouchRenderer>();
 builder.Services.Configure<HomeAssistantSettings>(client =>
 {
     client.Host = settings.HaUrl.Host;
@@ -31,6 +32,8 @@ builder.Services.Configure<HomeAssistantSettings>(client =>
 });
 builder.Services.AddHomeAssistantClient();
 builder.Services.AddSingleton<HomeAssistantService>();
+builder.Services.AddSingleton<BrightnessHoldService>();
+builder.Services.AddHostedService(services => services.GetRequiredService<BrightnessHoldService>());
 builder.Services.AddHostedService<FreePbxBridge>();
 
 var app = builder.Build();
@@ -44,7 +47,6 @@ app.MapGet("/app.xml", (HttpRequest request) =>
         MenuItem =
         {
             new CiscoIpPhoneMenuItemType { Name = "Home Assistant", Url = HomeAssistantPhone.Url(request, "/ha.xml") },
-            new CiscoIpPhoneMenuItemType { Name = "Maeve bedroom lighting", Url = HomeAssistantPhone.Url(request, "/ha/bedroom.xml") },
         },
         SoftKeyItem =
         {
@@ -53,6 +55,8 @@ app.MapGet("/app.xml", (HttpRequest request) =>
         },
     };
 
+    foreach (var (id, view) in settings.Views)
+        menu.MenuItem.Add(new() { Name = view.Title, Url = HomeAssistantPhone.Url(request, $"/ha/touch.xml?view={Uri.EscapeDataString(id)}") });
     return CiscoXml.Result(menu);
 });
 

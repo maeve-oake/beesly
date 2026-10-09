@@ -8,8 +8,6 @@ namespace Beesly;
 public sealed class HomeAssistantService(AppSettings settings, IHomeAssistantApiManager api)
 {
     public IReadOnlyList<HomeAssistantEntity> Entities => settings.Entities;
-    public IReadOnlyDictionary<string, HomeAssistantEntity> BedroomLights => settings.BedroomLights;
-    public IReadOnlyDictionary<string, HomeAssistantEntity> Slots => settings.Slots;
     public bool IsConfigured => !string.IsNullOrWhiteSpace(settings.HaToken);
 
     public async Task<List<HassState>> GetStatesAsync()
@@ -42,8 +40,6 @@ public sealed class HomeAssistantService(AppSettings settings, IHomeAssistantApi
         await CallServiceAsync("climate/set_temperature", new { entity_id = entity.EntityId, temperature });
     }
 
-    public Task SetColorAsync(HomeAssistantEntity entity, string color) => SetColorAsync([entity], color);
-
     public async Task SetColorAsync(IReadOnlyList<HomeAssistantEntity> entities, string color)
     {
         if (entities.Count == 0 || entities.Any(entity => !entity.CanToggle || entity.Domain != "light"))
@@ -61,14 +57,12 @@ public sealed class HomeAssistantService(AppSettings settings, IHomeAssistantApi
         await CallServiceAsync("light/turn_on", data);
     }
 
-    public Task AdjustBrightnessAsync(HomeAssistantEntity entity, int step) => AdjustBrightnessAsync([entity], step);
-
-    public async Task AdjustBrightnessAsync(IReadOnlyList<HomeAssistantEntity> entities, int step)
+    public async Task AdjustBrightnessAsync(IReadOnlyList<HomeAssistantEntity> entities, int step, CancellationToken cancellationToken = default)
     {
-        if (entities.Count == 0 || entities.Any(entity => !entity.CanToggle || entity.Domain != "light") || step is not (-20 or 20))
+        if (entities.Count == 0 || entities.Any(entity => !entity.CanToggle || entity.Domain != "light") || step is 0 or < -100 or > 100)
             throw new InvalidOperationException("Invalid brightness adjustment.");
         await CallServiceAsync("light/turn_on",
-            new { entity_id = entities.Select(entity => entity.EntityId).ToArray(), brightness_step_pct = step, transition = 0.5 });
+            new { entity_id = entities.Select(entity => entity.EntityId).ToArray(), brightness_step_pct = step, transition = 0.2 }, cancellationToken);
     }
 
     public async Task<List<HassState>> ToggleAndWaitAsync(HomeAssistantEntity entity, string previousState)
@@ -85,10 +79,12 @@ public sealed class HomeAssistantService(AppSettings settings, IHomeAssistantApi
         }
     }
 
-    private async Task CallServiceAsync(string service, object data)
+    private async Task CallServiceAsync(string service, object data, CancellationToken cancellationToken = default)
     {
         using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(10));
-        var result = await api.PostApiCallAsync<List<HassState>>($"services/{service}", timeout.Token, data);
+        using var linked = CancellationTokenSource.CreateLinkedTokenSource(timeout.Token, cancellationToken);
+        var result = await api.PostApiCallAsync<List<HassState>>($"services/{service}", linked.Token, data);
+        cancellationToken.ThrowIfCancellationRequested();
         // NetDaemon returns null for failed POSTs; an empty list is a successful response.
         if (result is null)
             throw new HttpRequestException($"Home Assistant rejected {service}.");
